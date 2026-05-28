@@ -1,0 +1,145 @@
+"""
+Telco Customer Churn Predictor — Streamlit App
+
+A web interface for predicting customer churn using a pre-trained
+logistic regression pipeline from the telco-customer-churn project.
+"""
+
+import streamlit as st
+import pandas as pd
+import joblib
+import json
+
+# Page config — sets the browser tab title and layout
+st.set_page_config(
+    page_title="Churn Predictor",
+    page_icon="📊",
+    layout="wide"
+)
+
+# Cache the model loading so it only runs once, not on every interaction
+@st.cache_resource
+def load_model():
+    model = joblib.load("churn_model.pkl")
+    with open("feature_info.json") as f:
+        feature_info = json.load(f)
+    return model, feature_info
+
+model, feature_info = load_model()
+
+# ---- Header ----
+st.title("Telco Customer Churn Predictor")
+st.markdown(
+    "Predict whether a telecom customer is likely to churn. "
+    "Model: logistic regression trained on 7,032 customers, ROC-AUC 0.836 on held-out test set. "
+    "[See the full analysis on GitHub](https://github.com/Zayhan-Z/telco-customer-churn)."
+)
+
+st.divider()
+
+# ---- Input form ----
+st.subheader("Customer details")
+
+# Two columns for a cleaner layout
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("**Demographics**")
+    gender = st.selectbox("Gender", ["Male", "Female"])
+    senior_citizen = st.selectbox("Senior citizen?", ["No", "Yes"])
+    partner = st.selectbox("Has partner?", ["No", "Yes"])
+    dependents = st.selectbox("Has dependents?", ["No", "Yes"])
+
+    st.markdown("**Account**")
+    tenure = st.slider("Tenure (months)", 0, 72, 12)
+    contract = st.selectbox("Contract type", ["Month-to-month", "One year", "Two year"])
+    paperless_billing = st.selectbox("Paperless billing?", ["No", "Yes"])
+    payment_method = st.selectbox(
+        "Payment method",
+        ["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"]
+    )
+
+with col2:
+    st.markdown("**Services**")
+    phone_service = st.selectbox("Phone service?", ["No", "Yes"])
+    multiple_lines = st.selectbox("Multiple lines?", ["No", "Yes", "No phone service"])
+    internet_service = st.selectbox("Internet service", ["DSL", "Fiber optic", "No"])
+    online_security = st.selectbox("Online security?", ["No", "Yes", "No internet service"])
+    online_backup = st.selectbox("Online backup?", ["No", "Yes", "No internet service"])
+    device_protection = st.selectbox("Device protection?", ["No", "Yes", "No internet service"])
+    tech_support = st.selectbox("Tech support?", ["No", "Yes", "No internet service"])
+    streaming_tv = st.selectbox("Streaming TV?", ["No", "Yes", "No internet service"])
+    streaming_movies = st.selectbox("Streaming movies?", ["No", "Yes", "No internet service"])
+
+    st.markdown("**Charges**")
+    monthly_charges = st.number_input("Monthly charges (£)", min_value=0.0, max_value=200.0, value=70.0, step=1.0)
+    total_charges = st.number_input("Total charges (£)", min_value=0.0, max_value=10000.0, value=tenure * monthly_charges, step=10.0)
+
+# ---- Predict button ----
+st.divider()
+
+if st.button("Predict churn", type="primary", use_container_width=True):
+    # Build a single-row DataFrame in the exact format the model expects
+    # Note: SeniorCitizen needs to be 0 or 1 (it's numeric in the original data)
+    input_data = pd.DataFrame([{
+        "gender": gender,
+        "SeniorCitizen": 1 if senior_citizen == "Yes" else 0,
+        "Partner": partner,
+        "Dependents": dependents,
+        "tenure": tenure,
+        "PhoneService": phone_service,
+        "MultipleLines": multiple_lines,
+        "InternetService": internet_service,
+        "OnlineSecurity": online_security,
+        "OnlineBackup": online_backup,
+        "DeviceProtection": device_protection,
+        "TechSupport": tech_support,
+        "StreamingTV": streaming_tv,
+        "StreamingMovies": streaming_movies,
+        "Contract": contract,
+        "PaperlessBilling": paperless_billing,
+        "PaymentMethod": payment_method,
+        "MonthlyCharges": monthly_charges,
+        "TotalCharges": total_charges
+    }])
+
+    # Get prediction and probability
+    prediction = model.predict(input_data)[0]
+    probability = model.predict_proba(input_data)[0, 1]
+
+    # Display result
+    st.subheader("Prediction")
+
+    result_col1, result_col2 = st.columns(2)
+
+    with result_col1:
+        if prediction == 1:
+            st.error(f"### ⚠️ Likely to churn")
+        else:
+            st.success(f"### ✓ Likely to stay")
+
+    with result_col2:
+        st.metric("Churn probability", f"{probability:.1%}")
+
+    # Risk band interpretation
+    if probability < 0.2:
+        risk = "Low risk"
+        advice = "This customer profile shows strong retention signals. No urgent action needed."
+    elif probability < 0.5:
+        risk = "Moderate risk"
+        advice = "Worth monitoring. Consider proactive engagement if customer reports issues."
+    elif probability < 0.75:
+        risk = "High risk"
+        advice = "Recommend retention outreach: contract upgrade offer or service review."
+    else:
+        risk = "Very high risk"
+        advice = "Priority retention case. Personal outreach with retention offer recommended."
+
+    st.info(f"**{risk}.** {advice}")
+
+# ---- Footer ----
+st.divider()
+st.caption(
+    "Built with Streamlit. Model: scikit-learn logistic regression. "
+    "Dataset: Telco Customer Churn (Kaggle, IBM Sample Data Sets)."
+)
